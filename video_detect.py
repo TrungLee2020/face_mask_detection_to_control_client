@@ -107,10 +107,10 @@ while True:
         (startX, startY, endX, endY) = box
         (mask, withoutMask) = pred
 
-        label = {0: 'NO MASK', 1: 'NO MASK'}
+        label = {0: 'Mask', 1: 'No Mask'}
         if mask > withoutMask:
             label = "Mask"
-            ser.write(1)
+            ser.write(0)
         else:
             label = "No Mask"
 
