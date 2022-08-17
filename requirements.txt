@@ -1,0 +1,14 @@
+opencv-contrib-python
+numpy
+pandas
+matplotlib
+Pillow
+scikit-learn
+sklearn
+keras
+tensorflow
+seaborn
+imutils
+torchvision
+torch
+pyserial
