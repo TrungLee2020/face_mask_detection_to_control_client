@@ -1,5 +1,5 @@
 from keras.applications.mobilenet_v2 import preprocess_input
-from keras.utils import img_to_array
+from tensorflow.keras.preprocessing.image import img_to_array
 from keras.models import load_model
 from imutils.video import VideoStream
 import numpy as np
@@ -10,16 +10,16 @@ import cv2
 import os
 import logging
 import serial
+import threading
 
 # Connect to serial
 ser = serial.Serial(
-    port='COM1',
+    port='COM3',
     baudrate=9600,
-    timeout=.1
 )
 
-def detect_and_predict_mask(frame, faceNet, maskNet):
 
+def detect_and_predict_mask(frame, faceNet, maskNet):
     (h, w) = frame.shape[:2]
     blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300),
                                  (104.0, 177.0, 123.0))
@@ -45,7 +45,6 @@ def detect_and_predict_mask(frame, faceNet, maskNet):
             (startX, startY) = (max(0, startX), max(0, startY))
             (endX, endY) = (min(w - 1, endX), min(h - 1, endY))
 
-
             face = frame[startY:endY, startX:endX]
             if face.any():
                 face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
@@ -61,8 +60,6 @@ def detect_and_predict_mask(frame, faceNet, maskNet):
         faces = np.array(faces, dtype="float32")
         preds = maskNet.predict(faces, batch_size=32)
 
-    # return a 2-tuple of the face locations and their corresponding
-    # locations
     return (locs, preds)
 
 
@@ -86,50 +83,66 @@ faceNet = cv2.dnn.readNet(prototxtPath, weightsPath)
 
 # print("[INFO] loading face mask detector model...")
 logging.info("loading face mask detector model...")
+
 maskNet = load_model(args["model"])
 
 # initialize the video stream and allow the camera sensor to warm up
 print("[INFO] starting video stream...")
 
-vs = VideoStream(src=0).start()
-time.sleep(2.0)
 
-# loop over the frames from the video stream
-while True:
+def video_detect():
+    vs = VideoStream(src=0).start()
+    time.sleep(2.0)
+    count = 0
+    # loop over the frames from the video stream
+    while True:
 
-    frame = vs.read()
-    frame = imutils.resize(frame, width=600)
+        frame = vs.read()
+        frame = imutils.resize(frame, width=600)
 
-    (locs, preds) = detect_and_predict_mask(frame, faceNet, maskNet)
+        (locs, preds) = detect_and_predict_mask(frame, faceNet, maskNet)
 
-    for (box, pred) in zip(locs, preds):
-        # unpack the bounding box and predictions
-        (startX, startY, endX, endY) = box
-        (mask, withoutMask) = pred
+        for (box, pred) in zip(locs, preds):
+            # unpack the bounding box and predictions
+            (startX, startY, endX, endY) = box
+            (mask, withoutMask) = pred
+            count += 1
+            if mask > withoutMask:
+                label = "Mask"
+                if count % 30 == 0:
+                    thread = threading.Thread(target=send_data(x=b'1'))
+                    thread.start()
+            else:
+                label = "No Mask"
+                if count % 30 == 0:
+                    thread = threading.Thread(target=send_data(x=b'0'))
+                    thread.start()
 
-        label = {0: 'Mask', 1: 'No Mask'}
-        if mask > withoutMask:
-            label = "Mask"
-            ser.write(0)
-        else:
-            label = "No Mask"
+            color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
 
-        color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
+            # include the probability in the label
+            label = "{}: {:.2f}%".format(label, max(mask, withoutMask) * 100)
 
-        # include the probability in the label
-        label = "{}: {:.2f}%".format(label, max(mask, withoutMask) * 100)
+            cv2.putText(frame, label, (startX, startY - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+            cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
+
+        # show the output frame
+        cv2.imshow("Frame", frame)
+        key = cv2.waitKey(1) & 0xFF
+
+        if key == ord("q"):
+            break
+
+    cv2.destroyAllWindows()
+    vs.stop()
 
 
-        cv2.putText(frame, label, (startX, startY - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
-        cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
+def send_data(x):
+    ser.write(x)
+    time.sleep(0.05)
+    ser.readline()
 
-    # show the output frame
-    cv2.imshow("Frame", frame)
-    key = cv2.waitKey(1) & 0xFF
 
-    if key == ord("q"):
-        break
-
-cv2.destroyAllWindows()
-vs.stop()
+if __name__ == '__main__':
+    video_detect()
