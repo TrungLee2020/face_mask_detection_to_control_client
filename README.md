@@ -1,3 +1,3 @@
 # face_recognite
-# RUN
+##Run code
 python video_detect.py
