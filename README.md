@@ -5,4 +5,4 @@ python: video_detect.py
 Connect to Arduino Uno R3 by COM port before RUN video_detect.py
 
 # Plot training process
-![]plot.png
+![](plot.png)
